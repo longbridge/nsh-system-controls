@@ -1,0 +1,41 @@
+[package]
+name = "nsh-system-controls"
+description = "The system's own segmented control, switch and date and time picker for Native Shell (NSH) apps, an nshm: UIKit's on iOS, the framework's on Android."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+repository = "https://github.com/longbridge/nsh-system-controls"
+readme = "README.md"
+keywords = ["nshm", "nsh", "switch", "date-picker", "segmented-control"]
+categories = ["gui"]
+
+[dependencies]
+nsh-core = "0.7.2"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+log = "0.4"
+serde_json = "1"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# The host nsh builds for the app turns on the features it needs.
+nsh-platform-ios = { version = "0.7.2", default-features = false }
+block2 = "0.6.2"
+objc2 = "0.6.5"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSCalendar", "NSDate", "NSObject", "NSString"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-core-foundation", "UIAccessibilityConstants", "UIAction", "UIColor", "UIControl", "UIDatePicker", "UIImage", "UIMenuElement", "UIResponder", "UISegmentedControl", "UISwitch", "UIView"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The host nsh builds for the app turns on the features it needs.
+nsh-platform-android = { version = "0.7.2", default-features = false }
+
+[dev-dependencies]
+# The TypeScript declarations the CLI generates, checked in the tests.
+nsh-core = { version = "0.7.2", features = ["declarations"] }
+# Runs the components headless: what each element sends its native view.
+nsh-engine = { version = "0.7.2", default-features = false }
+
+# The controls' Java classes on Android (android/java, built by
+# android/build.sh): the packages nsh builds for an app carry them.
+[package.metadata.nsh.android]
+libraries = ["android/nsh-system-controls.jar"]
