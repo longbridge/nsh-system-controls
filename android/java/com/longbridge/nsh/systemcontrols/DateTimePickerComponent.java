@@ -227,11 +227,16 @@ public final class DateTimePickerComponent {
         return new SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, skeleton), locale);
     }
 
-    /** The dialogs' theme: the appearance shown (the app's, else the system's). */
+    /**
+     * The dialogs' theme: the system's dialog in the appearance shown (the
+     * app's, else the system's). Not its alert theme, which keeps a window at
+     * least 95% of a phone's width: wider than the date picker, the window
+     * would show a strip beside the picker's header.
+     */
     private int dialogTheme() {
         return night
-                ? android.R.style.Theme_DeviceDefault_Dialog_Alert
-                : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+                ? android.R.style.Theme_DeviceDefault_Dialog
+                : android.R.style.Theme_DeviceDefault_Light_Dialog;
     }
 
     /**
