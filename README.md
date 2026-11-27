@@ -22,6 +22,8 @@ Where a platform has no such control (`-`), the element takes no room and shows 
 nsh add github:longbridge/nsh-system-controls
 ```
 
+This takes the default branch from GitHub. Once a version is on [crates.io](https://crates.io/crates/nsh-system-controls), `nsh add nsh-system-controls` installs the newest release instead (`nsh add nsh-system-controls@0.1` for a version you choose).
+
 It needs NSH 0.7.2 or later. There is nothing to set up in `nsh.json`: the app that `nsh` builds registers the controls, and on Android it packages their Java classes too.
 
 ## Use from TSX
