@@ -25,7 +25,7 @@ use objc2::{
 use objc2_core_foundation::{CGFloat, CGRect, CGSize};
 use objc2_foundation::{
     NSCalendar, NSCalendarUnit, NSDate, NSDateComponents, NSDateFormatter, NSLocale,
-    NSLocaleCalendar, NSString, ns_string,
+    NSLocaleCalendar, NSLocaleCountryCode, NSString, ns_string,
 };
 use objc2_ui_kit::{
     UIAccessibilityContainerType, UIAction, UIControlEvents, UIDatePicker, UIDatePickerMode,
@@ -132,6 +132,25 @@ fn with_hour_cycle(identifier: &str, hours: Option<&str>) -> String {
     }
 }
 
+/// The script text in `language` is written in: `script` where the locale
+/// names one, else Chinese's by its region (Traditional in Taiwan, Hong
+/// Kong and Macau, Simplified elsewhere); `None` for a language that does
+/// not tell.
+fn script_of(language: &str, script: Option<&str>, region: Option<&str>) -> Option<String> {
+    if let Some(script) = script {
+        return Some(script.to_owned());
+    }
+    if !language.eq_ignore_ascii_case("zh") {
+        return None;
+    }
+    let traditional = region.is_some_and(|region| {
+        ["TW", "HK", "MO"]
+            .iter()
+            .any(|r| r.eq_ignore_ascii_case(region))
+    });
+    Some(if traditional { "Hant" } else { "Hans" }.to_owned())
+}
+
 /// Whether locales of these language and script codes are in the same
 /// language: a script only tells them apart where both name one.
 fn same_language(
@@ -145,12 +164,18 @@ fn same_language(
         }
 }
 
-/// The language and script codes of `locale`.
+/// The language code of `locale` and the script it is written in
+/// ([`script_of`]).
 fn language_of(locale: &NSLocale) -> (String, Option<String>) {
-    (
-        locale.languageCode().to_string(),
-        locale.scriptCode().map(|script| script.to_string()),
-    )
+    let language = locale.languageCode().to_string();
+    let script = locale.scriptCode().map(|script| script.to_string());
+    // SAFETY: a key Foundation defines; its value is the region's code.
+    let region = locale
+        .objectForKey(unsafe { NSLocaleCountryCode })
+        .and_then(|code| code.downcast::<NSString>().ok())
+        .map(|code| code.to_string());
+    let script = script_of(&language, script.as_deref(), region.as_deref());
+    (language, script)
 }
 
 /// The locale the picker shows the app's text language `tag` (BCP 47) in:
@@ -328,7 +353,9 @@ pub(crate) fn factory() -> ComponentFactory {
 mod tests {
     use serde_json::json;
 
-    use super::{Fields, hour_cycle_of_pattern, parse_fields, same_language, with_hour_cycle};
+    use super::{
+        Fields, hour_cycle_of_pattern, parse_fields, same_language, script_of, with_hour_cycle,
+    };
 
     #[test]
     fn the_hour_cycle_is_the_formats_hour_symbol() {
@@ -359,6 +386,41 @@ mod tests {
         assert!(same_language(("zh", Some("Hant")), ("zh", None)));
         assert!(!same_language(("de", None), ("en", None)));
         assert!(!same_language(("zh", Some("Hans")), ("zh", Some("Hant"))));
+    }
+
+    #[test]
+    fn chinese_is_written_in_its_regions_script() {
+        let script = |language, script, region| script_of(language, script, region);
+        assert_eq!(script("zh", None, Some("TW")).as_deref(), Some("Hant"));
+        assert_eq!(script("zh", None, Some("HK")).as_deref(), Some("Hant"));
+        assert_eq!(script("zh", None, Some("MO")).as_deref(), Some("Hant"));
+        assert_eq!(script("zh", None, Some("CN")).as_deref(), Some("Hans"));
+        assert_eq!(script("zh", None, Some("SG")).as_deref(), Some("Hans"));
+        assert_eq!(script("zh", None, None).as_deref(), Some("Hans"));
+        assert_eq!(
+            script("zh", Some("Hans"), Some("TW")).as_deref(),
+            Some("Hans")
+        );
+        assert_eq!(script("en", None, Some("US")), None);
+        assert_eq!(script("sr", Some("Latn"), None).as_deref(), Some("Latn"));
+    }
+
+    #[test]
+    fn a_chinese_script_the_app_picks_is_not_the_users_other_one() {
+        // The user's `zh_TW` against the app's `zh-Hans`: two scripts.
+        let user = ("zh", script_of("zh", None, Some("TW")));
+        let app = ("zh", script_of("zh", Some("Hans"), None));
+        assert!(!same_language(
+            (app.0, app.1.as_deref()),
+            (user.0, user.1.as_deref())
+        ));
+        // The user's `zh_CN` against the app's `zh`: one.
+        let user = ("zh", script_of("zh", None, Some("CN")));
+        let app = ("zh", script_of("zh", None, None));
+        assert!(same_language(
+            (app.0, app.1.as_deref()),
+            (user.0, user.1.as_deref())
+        ));
     }
 
     #[test]
