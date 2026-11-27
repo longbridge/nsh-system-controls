@@ -2,9 +2,11 @@
 
 The system's own segmented control, switch and date and time picker for [Native Shell (NSH)](https://github.com/longbridge/nsh) apps, as an [nshm](https://longbridge.github.io/nsh/docs/nshm).
 
-Each control is the platform's: UIKit's on iOS, the framework's on Android, with the system's look, motion, haptics and screen reader support. The app owns the value, hears the user's choice with `onChange`, and places the control with its `class` and `style`; its size is the system's where the style leaves it open.
+Each control is the platform's own: UIKit's on iOS, the framework's on Android, with the system's look, motion, haptics and screen reader support. Your app keeps the value and sets it again from `onChange`. You place the control with `class` and `style`; where they leave its size open, it takes the system's.
 
-`nsh/base` already has controls that work on every platform and that the app styles itself: `Switch`, `ToggleGroup`, `RadioGroup`, `DatePicker`, `TimeField`. Use those by default. Use this package only when the app needs exactly the system's control.
+**Do you need this package?** `nsh/base` already has these controls for every platform, in your app's own look: `Switch`, `ToggleGroup`, `RadioGroup`, `DatePicker` and `TimeField`. Start with those. Add this package when a screen should use exactly the system's control on iOS or Android.
+
+## What users see
 
 | Control | iOS and Mac Catalyst | Android | macOS, Windows, Linux, web |
 |---|---|---|---|
@@ -12,43 +14,75 @@ Each control is the platform's: UIKit's on iOS, the framework's on Android, with
 | `Switch` | `UISwitch` (Liquid Glass on iOS 26 and later) | The framework's switch drawn as Material 3's | - |
 | `DateTimePicker` | `UIDatePicker`, compact style | The value in a field that opens the system's date or time dialog | - |
 
-Where a platform has no such control (`-`), the element takes no room and shows nothing, so one layout holds both: show `nsh/base`'s control there, chosen by `platform.os`.
+Where a platform has no such control (`-`), the element takes no room and shows nothing. Show `nsh/base`'s control there instead (see below).
 
 ## Install
 
 ```sh
-nsh add nsh-system-controls                       # from crates.io
-nsh add github:longbridge/nsh-system-controls     # or from GitHub
+nsh add github:longbridge/nsh-system-controls
 ```
 
-The hosts `nsh` builds for the app register the controls. On Android the package carries the controls' Java classes, which this crate lists in its `Cargo.toml`; the app lists nothing.
+It needs NSH 0.7.2 or later. There is nothing to set up in `nsh.json`: the app that `nsh` builds registers the controls, and on Android it packages their Java classes too.
 
-## TSX
+## Use from TSX
 
 ```tsx
-import { signal } from "nsh";
+import { signal, View } from "nsh";
 import { DateTimePicker, SegmentedControl, Switch } from "nsh-system-controls";
 
-const appearance = signal(0);
-const wifi = signal(true);
-const at = signal("2026-11-17T09:30");
+export function Settings() {
+  const appearance = signal(0);
+  const wifi = signal(true);
+  const at = signal("2026-11-17T09:30");
 
-<SegmentedControl
-  items={[{ title: "Light", icon: "sun.max" }, { title: "Dark", icon: "moon" }]}
-  selectedIndex={appearance()}
-  onChange={({ index }) => appearance.set(index)}
-/>;
+  return (
+    <View class="gap-4 p-4">
+      <SegmentedControl
+        items={[{ title: "Light", icon: "sun.max" }, { title: "Dark", icon: "moon" }]}
+        selectedIndex={appearance()}
+        onChange={({ index }) => appearance.set(index)}
+      />
+      <Switch accessibilityLabel="Wi-Fi" checked={wifi()} onChange={({ checked }) => wifi.set(checked)} />
+      <DateTimePicker
+        mode="dateTime"
+        value={at()}
+        min="2026-11-17T00:00"
+        minuteInterval={5}
+        accessibilityLabel="Reminder"
+        onChange={({ value }) => at.set(value)}
+      />
+    </View>
+  );
+}
+```
 
-<Switch accessibilityLabel="Wi-Fi" checked={wifi()} onChange={({ checked }) => wifi.set(checked)} />;
+### On the other platforms
 
-<DateTimePicker
-  mode="dateTime"
-  value={at()}
-  min="2026-11-17T00:00"
-  minuteInterval={5}
-  accessibilityLabel="Reminder"
-  onChange={({ value }) => at.set(value)}
-/>;
+On the desktops and the web these elements show nothing, so pick the control by platform. The value and `onChange` stay the same:
+
+```tsx
+import { platform, signal } from "nsh";
+import { Switch as BaseSwitch } from "nsh/base";
+import { Switch } from "nsh-system-controls";
+
+const hasSystemSwitch = platform.os === "ios" || platform.os === "android";
+
+export function WifiSwitch() {
+  const wifi = signal(true);
+  const onChange = ({ checked }: { checked: boolean }) => wifi.set(checked);
+
+  return hasSystemSwitch ? (
+    <Switch accessibilityLabel="Wi-Fi" checked={wifi()} onChange={onChange} />
+  ) : (
+    <BaseSwitch
+      accessibilityLabel="Wi-Fi"
+      checked={wifi()}
+      onChange={onChange}
+      trackClass="w-11 rounded-full bg-muted p-0.5 transition-colors checked:bg-primary"
+      thumbClass="size-5 rounded-full bg-background shadow-sm transition-transform checked:translate-x-5"
+    />
+  );
+}
 ```
 
 The types are exported too:
@@ -63,7 +97,7 @@ import type {
 } from "nsh-system-controls";
 ```
 
-## Rust
+## Use from Rust
 
 ```rust
 use nsh_core::prelude::*;
@@ -153,11 +187,16 @@ Values are ISO strings in the mode's form, as HTML's date and time inputs take t
 - **iOS**: with `dateTime` the day and the time are two capsules. The calendar and the time wheels are the system's, in the user's locale, calendar and clock.
 - **Android**: the value shows in the formats of the app's language (including one `setLocale` picks) and the user's 12- or 24-hour clock, in a field per part; a press opens the system's date or time dialog in the same language. The time dialog offers every minute: a pick between two steps of `minuteInterval` takes the step before it, and a pick past `min` or `max` takes the bound.
 
+## Good to know
+
+- **The controls are registered by the apps `nsh` builds** (`nsh run`, `nsh package`). A native app that embeds NSH views in a build of its own registers its native components itself, so these controls show nothing there.
+- **The iOS date picker uses the user's locale**, not the language your app picks with `setLocale`. On Android the field and the dialogs follow your app's language.
+
 ## Moving from NSH core
 
 NSH up to 0.7 had these controls built in, in `nsh/mobile` (TSX) and `nsh_core::mobile` (Rust). They have moved here; the props, events and types are the same. To move:
 
-1. `nsh add nsh-system-controls`.
+1. `nsh add github:longbridge/nsh-system-controls`.
 2. Change the imports:
 
 ```diff
