@@ -362,7 +362,7 @@ fn the_date_time_picker_shows_nothing_off_mobile() {
     }
 }
 
-// --- What Android's views draw by ---------------------------------------------
+// --- What the system's views are told -----------------------------------------
 
 #[component]
 fn InAnotherLanguage() -> impl IntoElement {
@@ -380,9 +380,11 @@ fn InAnotherLanguage() -> impl IntoElement {
 /// Android's views draw Material's colors and format the value themselves,
 /// so they are told the appearance shown, the app's over the system's
 /// (`dark`), and the picker the language of the app's text (`locale`),
-/// again as it changes. UIKit's controls take both from the system.
+/// again as it changes. UIKit's controls take the appearance from the
+/// system; its picker is told the language too, as it shows the user's
+/// otherwise (it keeps the user's where the two are one language).
 #[test]
-fn android_controls_follow_the_apps_appearance_and_language() {
+fn the_controls_follow_the_apps_appearance_and_language() {
     let root = || Root::of::<InAnotherLanguage>().appearance(Appearance::Dark);
     let (_engine, rx) = start(root(), Os::Android);
     let batches = until(&rx, |batch| shows(batch, "German: true"));
@@ -398,13 +400,16 @@ fn android_controls_follow_the_apps_appearance_and_language() {
 
     let (_engine, rx) = start(root(), Os::Ios);
     let batches = until(&rx, |batch| shows(batch, "German: true"));
-    for id in [
-        components(&batches, SWITCH_COMPONENT)[0],
-        components(&batches, DATE_TIME_PICKER_COMPONENT)[0],
-    ] {
+    let switch = components(&batches, SWITCH_COMPONENT)[0];
+    let picker = components(&batches, DATE_TIME_PICKER_COMPONENT)[0];
+    for id in [switch, picker] {
         assert_eq!(component_prop(&batches, id, "dark"), None);
-        assert_eq!(component_prop(&batches, id, "locale"), None);
     }
+    assert_eq!(component_prop(&batches, switch, "locale"), None);
+    assert_eq!(
+        component_prop(&batches, picker, "locale"),
+        Some(json!("de-DE"))
+    );
 }
 
 // --- The TSX face ------------------------------------------------------------
