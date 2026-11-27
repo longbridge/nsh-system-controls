@@ -19,10 +19,10 @@ Where a platform has no such control (`-`), the element takes no room and shows 
 ## Install
 
 ```sh
-nsh add github:longbridge/nsh-system-controls
+nsh add nsh-system-controls
 ```
 
-This takes the default branch from GitHub. Once a version is on [crates.io](https://crates.io/crates/nsh-system-controls), `nsh add nsh-system-controls` installs the newest release instead (`nsh add nsh-system-controls@0.1` for a version you choose).
+This installs the newest release from [crates.io](https://crates.io/crates/nsh-system-controls); `nsh add nsh-system-controls@0.1` picks a version, and `nsh add github:longbridge/nsh-system-controls` takes the default branch from GitHub instead.
 
 It needs NSH 0.7.2 or later. There is nothing to set up in `nsh.json`: the app that `nsh` builds registers the controls, and on Android it packages their Java classes too.
 
@@ -198,7 +198,7 @@ Values are ISO strings in the mode's form, as HTML's date and time inputs take t
 
 NSH up to 0.7 had these controls built in, in `nsh/mobile` (TSX) and `nsh_core::mobile` (Rust). They have moved here; the props, events and types are the same. To move:
 
-1. `nsh add github:longbridge/nsh-system-controls`.
+1. `nsh add nsh-system-controls`.
 2. Change the imports:
 
 ```diff
