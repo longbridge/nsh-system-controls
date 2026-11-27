@@ -255,7 +255,7 @@ pub fn DateTimePicker(
                 .get()
                 .map_or(JsonValue::Null, |label| label.as_ref().into())
         });
-    crate::android_environment(picker, true)
+    crate::system_environment(picker, true)
         .on_native_event(move |event: &NativeEvent| {
             if &*event.name == "change"
                 && let Some(value) =

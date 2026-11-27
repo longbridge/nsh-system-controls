@@ -82,16 +82,20 @@ fn primary_tint() -> JsonValue {
         .map_or(JsonValue::Null, |primary| color(primary).to_hex().into())
 }
 
-/// `element` with what Android's views draw by and UIKit's take from the
-/// system: the appearance shown (`dark`: the app's, else the system's) and,
-/// with `locale`, the language of the app's text (`locale`, a BCP 47 tag),
-/// each sent again when it changes.
-fn android_environment(element: NativeView, locale: bool) -> NativeView {
-    if os() != Os::Android {
-        return element;
-    }
-    let element = element.prop("dark", || JsonValue::Bool(dark()));
-    if locale {
+/// `element` with what the system's views cannot take from the system,
+/// each sent again when it changes: on Android the appearance shown
+/// (`dark`: the app's, else the system's), and with `locale` on iOS and
+/// Android the language of the app's text (`locale`, a BCP 47 tag). UIKit
+/// follows the appearance by itself; its date picker is in the user's
+/// locale unless told the app's language, and keeps the user's where the
+/// two are the same language.
+fn system_environment(element: NativeView, locale: bool) -> NativeView {
+    let element = if os() == Os::Android {
+        element.prop("dark", || JsonValue::Bool(dark()))
+    } else {
+        element
+    };
+    if locale && matches!(os(), Os::Android | Os::Ios) {
         element.prop("locale", || JsonValue::from(text_locale().as_str()))
     } else {
         element

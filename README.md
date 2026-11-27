@@ -184,13 +184,13 @@ Sets a day, a time of day or both. iOS and Android.
 
 Values are ISO strings in the mode's form, as HTML's date and time inputs take them: `"2026-11-17"` for `date`, `"09:30"` for `time`, `"2026-11-17T09:30"` for `dateTime`. They are wall-clock times: the picker shows them as they are, and the app ties them to the time zone it means. A value, `min` or `max` in another mode's form is left out with a warning.
 
-- **iOS**: with `dateTime` the day and the time are two capsules. The calendar and the time wheels are the system's, in the user's locale, calendar and clock.
+- **iOS**: with `dateTime` the day and the time are two capsules. The calendar and the time wheels are the system's, in the user's calendar and 12- or 24-hour clock. Where your app's text is in another language than the user's (one `setLocale` picks, or the one your translations have), the words, date formats and first day of the week are that language's; otherwise everything is the user's own locale, with their region settings.
 - **Android**: the value shows in the formats of the app's language (including one `setLocale` picks) and the user's 12- or 24-hour clock, in a field per part; a press opens the system's date or time dialog in the same language. The time dialog offers every minute: a pick between two steps of `minuteInterval` takes the step before it, and a pick past `min` or `max` takes the bound.
 
 ## Good to know
 
 - **The controls are registered by the apps `nsh` builds** (`nsh run`, `nsh package`). A native app that embeds NSH views in a build of its own registers its native components itself, so these controls show nothing there.
-- **The iOS date picker uses the user's locale**, not the language your app picks with `setLocale`. On Android the field and the dialogs follow your app's language.
+- **The date pickers follow your app's language** (`setLocale`, your translations), on iOS and Android alike, and keep the user's 12- or 24-hour clock. On iOS a picker whose language is already the user's stays in the user's own locale, region settings included.
 
 ## Moving from NSH core
 

@@ -7,6 +7,12 @@
 //! The values are wall-clock times: they become dates in the user's
 //! calendar and time zone, which the picker shows them in, and its dates
 //! come back as the same fields.
+//!
+//! The picker shows its words and formats in the user's locale
+//! (`NSLocale.currentLocale`, with their region settings) unless the app's
+//! text is in another language (`locale`): then in that one's, with the
+//! user's 12- or 24-hour clock, and its weeks start on that language's
+//! first day.
 
 use std::{ptr::NonNull, rc::Rc};
 
@@ -16,8 +22,11 @@ use objc2::{
     MainThreadMarker, MainThreadOnly, msg_send,
     rc::{Retained, Weak},
 };
-use objc2_core_foundation::{CGRect, CGSize};
-use objc2_foundation::{NSCalendar, NSCalendarUnit, NSDate, NSDateComponents, NSString};
+use objc2_core_foundation::{CGFloat, CGRect, CGSize};
+use objc2_foundation::{
+    NSCalendar, NSCalendarUnit, NSDate, NSDateComponents, NSDateFormatter, NSLocale,
+    NSLocaleCalendar, NSString, ns_string,
+};
 use objc2_ui_kit::{
     UIAccessibilityContainerType, UIAction, UIControlEvents, UIDatePicker, UIDatePickerMode,
     UIDatePickerStyle, UIView,
@@ -94,6 +103,98 @@ fn fields_of(calendar: &NSCalendar, date: &NSDate) -> JsonValue {
     })
 }
 
+/// The ICU `hours` keyword (`h12`, `h23`, …) of a time format's hour
+/// symbol (`h:mm a`, `HH:mm`); `None` without one. Quoted text is not a
+/// symbol.
+fn hour_cycle_of_pattern(pattern: &str) -> Option<&'static str> {
+    let mut quoted = false;
+    for c in pattern.chars() {
+        match c {
+            '\'' => quoted = !quoted,
+            'h' if !quoted => return Some("h12"),
+            'H' if !quoted => return Some("h23"),
+            'K' if !quoted => return Some("h11"),
+            'k' if !quoted => return Some("h24"),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `identifier` (a canonical locale identifier, `de_DE`) with the ICU
+/// `hours` keyword `hours`, unless it has one.
+fn with_hour_cycle(identifier: &str, hours: Option<&str>) -> String {
+    match hours {
+        Some(_) if identifier.contains("hours=") => identifier.to_owned(),
+        Some(hours) if identifier.contains('@') => format!("{identifier};hours={hours}"),
+        Some(hours) => format!("{identifier}@hours={hours}"),
+        None => identifier.to_owned(),
+    }
+}
+
+/// Whether locales of these language and script codes are in the same
+/// language: a script only tells them apart where both name one.
+fn same_language(
+    (language, script): (&str, Option<&str>),
+    (other, other_script): (&str, Option<&str>),
+) -> bool {
+    language.eq_ignore_ascii_case(other)
+        && match (script, other_script) {
+            (Some(script), Some(other)) => script.eq_ignore_ascii_case(other),
+            _ => true,
+        }
+}
+
+/// The language and script codes of `locale`.
+fn language_of(locale: &NSLocale) -> (String, Option<String>) {
+    (
+        locale.languageCode().to_string(),
+        locale.scriptCode().map(|script| script.to_string()),
+    )
+}
+
+/// The locale the picker shows the app's text language `tag` (BCP 47) in:
+/// `None`, the user's own (`currentLocale`, with the region settings
+/// Settings gives it), where `tag` is none or in the user's language;
+/// else `tag`'s, with the user's 12- or 24-hour clock.
+fn picker_locale(tag: Option<&str>) -> Option<Retained<NSLocale>> {
+    let tag = tag.filter(|tag| !tag.is_empty())?;
+    let identifier = NSLocale::canonicalLocaleIdentifierFromString(&NSString::from_str(tag));
+    let shown = NSLocale::localeWithLocaleIdentifier(&identifier);
+    let current = NSLocale::currentLocale();
+    let (language, script) = language_of(&shown);
+    let (user_language, user_script) = language_of(&current);
+    if same_language(
+        (&language, script.as_deref()),
+        (&user_language, user_script.as_deref()),
+    ) {
+        return None;
+    }
+    // The hours of the user's time format, which 24-hour time changes.
+    let hours =
+        NSDateFormatter::dateFormatFromTemplate_options_locale(ns_string!("j"), 0, Some(&current))
+            .and_then(|format| hour_cycle_of_pattern(&format.to_string()));
+    let identifier = with_hour_cycle(&identifier.to_string(), hours);
+    Some(NSLocale::localeWithLocaleIdentifier(&NSString::from_str(
+        &identifier,
+    )))
+}
+
+/// The user's calendar (their calendar system and time zone) in `locale`,
+/// with the weeks starting on `locale`'s first day.
+fn calendar_in(locale: &NSLocale) -> Option<Retained<NSCalendar>> {
+    let user = NSCalendar::currentCalendar();
+    let calendar = NSCalendar::calendarWithIdentifier(&user.calendarIdentifier())?;
+    calendar.setTimeZone(&user.timeZone());
+    calendar.setLocale(Some(locale));
+    // SAFETY: a key Foundation defines; its value is the locale's calendar.
+    let own = locale.objectForKey(unsafe { NSLocaleCalendar });
+    if let Some(own) = own.and_then(|own| own.downcast::<NSCalendar>().ok()) {
+        calendar.setFirstWeekday(own.firstWeekday());
+    }
+    Some(calendar)
+}
+
 struct SystemDateTimePicker {
     picker: Retained<UIDatePicker>,
     context: ComponentContext,
@@ -110,7 +211,32 @@ impl SystemDateTimePicker {
         let size = self.picker.sizeThatFits(CGSize::new(0.0, 0.0));
         self.context.set_size(size.width as f32, size.height as f32);
     }
+
+    /// Shows the picker in `locale` (`None`: the user's) and reports its
+    /// size for the new formats. A compact picker fits its capsules' text
+    /// to its width, a shorter date where it is short, so it is laid out
+    /// and measured at a width any date fits: a language with longer dates
+    /// is not left in the short form the last one's width chose.
+    fn show_locale(&self, locale: Option<&NSLocale>) {
+        let calendar = locale.and_then(calendar_in);
+        // Nil returns each to the user's.
+        self.picker.setLocale(locale);
+        self.picker.setCalendar(calendar.as_deref());
+        let frame = self.picker.frame();
+        let mut wide = frame;
+        wide.size.width = wide.size.width.max(MEASURING_WIDTH);
+        self.picker.setFrame(wide);
+        self.picker.setNeedsLayout();
+        self.picker.layoutIfNeeded();
+        let size = self.picker.sizeThatFits(CGSize::new(0.0, 0.0));
+        self.picker.setFrame(frame);
+        self.picker.setNeedsLayout();
+        self.context.set_size(size.width as f32, size.height as f32);
+    }
 }
+
+/// A width wider than a compact picker's capsules in any language.
+const MEASURING_WIDTH: CGFloat = 2000.0;
 
 impl NativeComponent for SystemDateTimePicker {
     fn view(&self) -> &UIView {
@@ -132,6 +258,10 @@ impl NativeComponent for SystemDateTimePicker {
             }
             "min" => self.picker.setMinimumDate(self.date(value).as_deref()),
             "max" => self.picker.setMaximumDate(self.date(value).as_deref()),
+            "locale" => {
+                let locale = picker_locale(value.and_then(JsonValue::as_str));
+                self.show_locale(locale.as_deref());
+            }
             "minuteInterval" => {
                 let interval = value.and_then(JsonValue::as_i64).unwrap_or(1);
                 self.picker.setMinuteInterval(interval as isize);
@@ -198,7 +328,38 @@ pub(crate) fn factory() -> ComponentFactory {
 mod tests {
     use serde_json::json;
 
-    use super::{Fields, parse_fields};
+    use super::{Fields, hour_cycle_of_pattern, parse_fields, same_language, with_hour_cycle};
+
+    #[test]
+    fn the_hour_cycle_is_the_formats_hour_symbol() {
+        assert_eq!(hour_cycle_of_pattern("h:mm a"), Some("h12"));
+        assert_eq!(hour_cycle_of_pattern("HH:mm"), Some("h23"));
+        assert_eq!(hour_cycle_of_pattern("'h' HH"), Some("h23"));
+        assert_eq!(hour_cycle_of_pattern("K:mm a"), Some("h11"));
+        assert_eq!(hour_cycle_of_pattern("mm"), None);
+    }
+
+    #[test]
+    fn the_users_hour_cycle_joins_the_locale() {
+        assert_eq!(with_hour_cycle("de_DE", Some("h12")), "de_DE@hours=h12");
+        assert_eq!(
+            with_hour_cycle("de_DE@calendar=gregorian", Some("h12")),
+            "de_DE@calendar=gregorian;hours=h12"
+        );
+        assert_eq!(
+            with_hour_cycle("de_DE@hours=h23", Some("h12")),
+            "de_DE@hours=h23"
+        );
+        assert_eq!(with_hour_cycle("de_DE", None), "de_DE");
+    }
+
+    #[test]
+    fn locales_of_one_language_are_the_same_language() {
+        assert!(same_language(("en", None), ("en", None)));
+        assert!(same_language(("zh", Some("Hant")), ("zh", None)));
+        assert!(!same_language(("de", None), ("en", None)));
+        assert!(!same_language(("zh", Some("Hans")), ("zh", Some("Hant"))));
+    }
 
     #[test]
     fn values_carry_the_fields_they_have() {

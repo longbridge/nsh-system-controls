@@ -69,7 +69,7 @@ pub fn Switch(props: SwitchProps, cx: Scope<SwitchEvent>) -> impl IntoElement {
         })
         // One color, for the appearance shown: sent again when either changes.
         .prop("tint", crate::primary_tint);
-    crate::android_environment(switch, false)
+    crate::system_environment(switch, false)
         .on_native_event(move |event: &NativeEvent| {
             if &*event.name == "change"
                 && let Some(checked) = event.data.as_bool()
